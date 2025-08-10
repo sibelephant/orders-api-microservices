@@ -44,6 +44,10 @@ func (a *App) Start(ctx context.Context) error {
 		close(ch)
 	}()
 
-	return nil
-
+	select {
+	case err = <-ch:
+		return err
+	case <-ctx.Done():
+		return server.Shutdown(context.Background())
+	}
 }
