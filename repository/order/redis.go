@@ -75,23 +75,23 @@ func (r *RedisRepo) FindByID(ctx context.Context, id uint64) (model.Order, error
 // DeleteByID removes an order and its set membership atomically.
 func (r *RedisRepo) DeleteByID(ctx context.Context, id uint64) error {
 	key := orderIDKey(id)
+
+	// First check if the order exists
+	exists, err := r.Client.Exists(ctx, key).Result()
+	if err != nil {
+		return fmt.Errorf("failed to check order existence: %w", err)
+	}
+	if exists == 0 {
+		return ErrNotExist
+	}
+
 	txn := r.Client.TxPipeline()
 
-	err := txn.Del(ctx, key).Err()
-	if errors.Is(err, redis.Nil) {
-		txn.Discard()
-		return ErrNotExist
-	} else if err != nil {
-		txn.Discard()
-		return fmt.Errorf("delete order: %w", err)
-	}
+	txn.Del(ctx, key)
+	txn.SRem(ctx, "orders", key)
 
-	if err := txn.SRem(ctx, "orders", key).Err(); err != nil {
-		txn.Discard()
-		return fmt.Errorf("failed to remove from orders set : %w", err)
-	}
-
-	if _, err := txn.Exec(ctx); err != nil {
+	_, err = txn.Exec(ctx)
+	if err != nil {
 		return fmt.Errorf("failed to exec transaction: %w", err)
 	}
 
